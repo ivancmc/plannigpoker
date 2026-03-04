@@ -1,0 +1,5 @@
+{
+  "name": "Planning Poker",
+  "description": "A real-time planning poker app for agile teams to estimate story points using the Fibonacci sequence.",
+  "requestFramePermissions": []
+}
