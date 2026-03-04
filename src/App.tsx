@@ -36,21 +36,16 @@ export default function App() {
         <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 py-4 px-6 flex items-center justify-between transition-colors duration-200">
           <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-xl">
             <svg
+              viewBox="0 0 32 32"
+              className="w-8 h-8 fill-indigo-600 dark:fill-indigo-400"
               xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
             >
-              <rect width="18" height="18" x="3" y="3" rx="2" />
-              <path d="M7 7h.01" />
-              <path d="M17 7h.01" />
-              <path d="M7 17h.01" />
-              <path d="M17 17h.01" />
+              <rect x="4" y="2" width="24" height="28" rx="4" />
+              <rect x="7" y="5" width="18" height="22" rx="2" fill="white" fillOpacity="0.2" />
+              <circle cx="16" cy="16" r="4" fill="white" />
+              <path d="M14 13L19 16L14 19V13Z" className="fill-indigo-600 dark:fill-indigo-400" />
+              <circle cx="8" cy="6" r="1.5" fill="white" />
+              <circle cx="24" cy="26" r="1.5" fill="white" />
             </svg>
             {t("app_title")}
           </div>
