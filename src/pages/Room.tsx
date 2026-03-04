@@ -1,9 +1,10 @@
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { socket } from "../socket";
+import { supabase } from "../lib/supabase";
 import { Copy, Users, Eye, RotateCcw, LogOut, EyeOff } from "lucide-react";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
+import { RealtimeChannel } from "@supabase/supabase-js";
 
 interface User {
   id: string;
@@ -34,60 +35,119 @@ export default function Room() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [channel, setChannel] = useState<RealtimeChannel | null>(null);
 
-  useEffect(() => {
-    if (room?.status === "revealing") {
-      setCountdown(3);
-      const interval = setInterval(() => {
-        setCountdown((prev) => (prev !== null && prev > 1 ? prev - 1 : null));
-      }, 1000);
-      return () => clearInterval(interval);
-    } else {
-      setCountdown(null);
-    }
-  }, [room?.status]);
+  const updateRoomFromPresence = useCallback((presenceState: any) => {
+    const users: User[] = Object.values(presenceState)
+      .flat()
+      .map((p: any) => ({
+        id: p.presence_ref,
+        name: p.name,
+        vote: p.vote,
+        isCreator: p.isCreator,
+        isSpectator: p.isSpectator,
+      }));
+
+    setRoom((prev) => {
+      if (!prev) return null;
+      return { ...prev, users };
+    });
+  }, []);
 
   useEffect(() => {
     if (!roomId) return;
 
-    // Check if room exists
-    socket.emit("getRoom", roomId, (roomData: RoomData | null) => {
-      setIsLoading(false);
-      if (!roomData) {
-        setError(t("room_not_found_desc"));
-        return;
-      }
-      setRoom(roomData);
-
-      // Auto-join if we already have a name in local storage
-      const savedName = localStorage.getItem("poker_user_name");
-      const savedSpectator = localStorage.getItem("poker_is_spectator") === "true";
-      if (savedName) {
-        joinRoom(savedName, savedSpectator);
-      }
+    const currentChannel = supabase.channel(`room:${roomId}`, {
+      config: {
+        presence: {
+          key: roomId,
+        },
+      },
     });
 
-    socket.on("roomUpdated", (updatedRoom: RoomData) => {
-      setRoom(updatedRoom);
-    });
+    currentChannel
+      .on("presence", { event: "sync" }, () => {
+        const state = currentChannel.presenceState();
+        const users: User[] = Object.values(state)
+          .flat()
+          .map((p: any) => ({
+            id: p.presence_ref,
+            name: p.name,
+            vote: p.vote,
+            isCreator: p.isCreator,
+            isSpectator: p.isSpectator,
+          }));
+
+        // Try to recover room name from presence or local storage if possible
+        const roomName = users.length > 0 ? (state[roomId]?.[0] as any)?.roomName : (localStorage.getItem(`poker_room_name_${roomId}`) || "Planning Poker");
+
+        setRoom((prev) => ({
+          id: roomId,
+          name: roomName,
+          status: prev?.status || "voting",
+          users,
+        }));
+        setIsLoading(false);
+      })
+      .on("broadcast", { event: "statusChange" }, ({ payload }) => {
+        setRoom((prev) => prev ? { ...prev, status: payload.status } : null);
+        if (payload.status === "revealing") {
+          startCountdown();
+        }
+      })
+      .on("broadcast", { event: "reset" }, () => {
+        setRoom((prev) => prev ? { ...prev, status: "voting" } : null);
+        // Vote reset is handled by presence update in 'handleReset'
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          const savedName = localStorage.getItem("poker_user_name");
+          const savedSpectator = localStorage.getItem("poker_is_spectator") === "true";
+          if (savedName) {
+            joinRoom(savedName, savedSpectator, currentChannel);
+          } else {
+            setIsLoading(false);
+          }
+        }
+      });
+
+    setChannel(currentChannel);
 
     return () => {
-      socket.off("roomUpdated");
+      currentChannel.unsubscribe();
     };
   }, [roomId, t]);
 
-  const joinRoom = (name: string, spectator: boolean) => {
-    if (!roomId) return;
-    socket.emit("joinRoom", roomId, name, spectator, (success: boolean, userId?: string, err?: string) => {
-      if (success && userId) {
-        setHasJoined(true);
-        localStorage.setItem("poker_user_id", userId);
-        localStorage.setItem("poker_user_name", name);
-        localStorage.setItem("poker_is_spectator", spectator ? "true" : "false");
-      } else {
-        setError(err || "Failed to join room");
-      }
+  const startCountdown = () => {
+    setCountdown(3);
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev !== null && prev > 1) return prev - 1;
+        clearInterval(interval);
+        return null;
+      });
+    }, 1000);
+  };
+
+  const joinRoom = async (name: string, spectator: boolean, activeChannel?: RealtimeChannel) => {
+    const targetChannel = activeChannel || channel;
+    if (!targetChannel || !roomId) return;
+
+    const state = targetChannel.presenceState();
+    const isFirst = Object.keys(state).length === 0;
+    const roomName = localStorage.getItem(`poker_room_name_${roomId}`) || "Planning Poker";
+
+    await targetChannel.track({
+      name,
+      isSpectator: spectator,
+      isCreator: isFirst,
+      vote: null,
+      roomName,
     });
+
+    setHasJoined(true);
+    localStorage.setItem("poker_user_name", name);
+    localStorage.setItem("poker_is_spectator", spectator ? "true" : "false");
   };
 
   const handleJoinSubmit = (e: FormEvent) => {
@@ -97,18 +157,59 @@ export default function Room() {
     }
   };
 
-  const handleVote = (vote: string) => {
-    if (room?.status === "voting" && !isSpectator) {
-      socket.emit("vote", roomId, vote);
+  const handleVote = async (vote: string) => {
+    if (room?.status === "voting" && !isSpectator && channel) {
+      const currentUser = room.users.find(u => u.name === userName); // Simplificação, idealmente usar UUID no presence
+      await channel.track({
+        ...currentUser,
+        name: userName,
+        isSpectator,
+        vote: vote,
+        roomName: room.name
+      });
     }
   };
 
-  const handleReveal = () => {
-    socket.emit("revealCards", roomId);
+  const handleReveal = async () => {
+    if (channel) {
+      await channel.send({
+        type: "broadcast",
+        event: "statusChange",
+        payload: { status: "revealing" },
+      });
+      setRoom(prev => prev ? { ...prev, status: "revealing" } : null);
+      startCountdown();
+
+      setTimeout(async () => {
+        await channel.send({
+          type: "broadcast",
+          event: "statusChange",
+          payload: { status: "revealed" },
+        });
+        setRoom(prev => prev ? { ...prev, status: "revealed" } : null);
+      }, 3000);
+    }
   };
 
-  const handleReset = () => {
-    socket.emit("resetVoting", roomId);
+  const handleReset = async () => {
+    if (channel) {
+      await channel.send({
+        type: "broadcast",
+        event: "reset",
+      });
+
+      // Update our own presence to reset vote
+      const currentUser = room?.users.find(u => u.name === userName);
+      await channel.track({
+        ...currentUser,
+        name: userName,
+        isSpectator,
+        vote: null,
+        roomName: room?.name
+      });
+
+      setRoom(prev => prev ? { ...prev, status: "voting" } : null);
+    }
   };
 
   const copyInviteLink = () => {
@@ -187,7 +288,7 @@ export default function Room() {
 
   if (!room) return null;
 
-  const currentUser = room.users.find((u) => u.id === socket.id);
+  const currentUser = room.users.find((u) => u.name === userName);
   const isCreator = currentUser?.isCreator || false;
   const votingUsers = room.users.filter(u => !u.isSpectator);
   const spectatorUsers = room.users.filter(u => u.isSpectator);

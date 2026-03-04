@@ -1,6 +1,5 @@
 import { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { socket } from "../socket";
 import { Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -17,13 +16,13 @@ export default function Home() {
     if (!roomName.trim() || !userName.trim()) return;
 
     setIsLoading(true);
-    socket.emit("createRoom", roomName, userName, isSpectator, (roomId: string, userId: string) => {
-      setIsLoading(false);
-      localStorage.setItem("poker_user_id", userId);
-      localStorage.setItem("poker_user_name", userName);
-      localStorage.setItem("poker_is_spectator", isSpectator ? "true" : "false");
-      navigate(`/room/${roomId}`);
-    });
+    const roomId = crypto.randomUUID();
+
+    localStorage.setItem(`poker_room_name_${roomId}`, roomName);
+    localStorage.setItem("poker_user_name", userName);
+    localStorage.setItem("poker_is_spectator", isSpectator ? "true" : "false");
+
+    navigate(`/room/${roomId}`);
   };
 
   return (
