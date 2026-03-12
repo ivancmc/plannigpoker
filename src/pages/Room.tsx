@@ -12,6 +12,7 @@ interface User {
   vote: string | null;
   isCreator: boolean;
   isSpectator: boolean;
+  location?: string;
 }
 
 interface RoomData {
@@ -38,7 +39,65 @@ export default function Room() {
   const [copied, setCopied] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [channel, setChannel] = useState<RealtimeChannel | null>(null);
+  const [location, setLocation] = useState<string | null>(localStorage.getItem("poker_user_location"));
   const voteRef = useRef<string | null>(null);
+
+  const startCountdown = () => {
+    setCountdown(3);
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev !== null && prev > 1) return prev - 1;
+        clearInterval(interval);
+        return null;
+      });
+    }, 1000);
+  };
+
+  const joinRoom = useCallback(async (name: string, spectator: boolean, activeChannel?: RealtimeChannel) => {
+    const targetChannel = activeChannel || channel;
+    if (!targetChannel || !roomId) return;
+
+    const state = targetChannel.presenceState();
+    const isFirst = Object.keys(state).length === 0;
+    const roomName = localStorage.getItem(`poker_room_name_${roomId}`) || "Planning Poker";
+
+    await targetChannel.track({
+      name,
+      isSpectator: spectator,
+      isCreator: isFirst,
+      vote: voteRef.current,
+      roomName,
+      location: localStorage.getItem("poker_user_location"),
+    });
+
+    setHasJoined(true);
+    userNameRef.current = name;
+    isSpectatorRef.current = spectator;
+    localStorage.setItem("poker_user_name", name);
+    localStorage.setItem("poker_is_spectator", spectator ? "true" : "false");
+  }, [channel, roomId]);
+
+  useEffect(() => {
+    const fetchLocation = async () => {
+      if (location) return;
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        const data = await res.json();
+        if (data.country_code === "BR" && data.region_code) {
+          const loc = data.region_code;
+          setLocation(loc);
+          localStorage.setItem("poker_user_location", loc);
+          
+          if (hasJoined && channel && userNameRef.current) {
+            joinRoom(userNameRef.current, isSpectatorRef.current, channel);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch location", err);
+      }
+    };
+    fetchLocation();
+  }, [location, hasJoined, channel, joinRoom]);
 
   const updateRoomFromPresence = useCallback((presenceState: any) => {
     const users: User[] = Object.values(presenceState)
@@ -49,6 +108,7 @@ export default function Room() {
         vote: p.vote,
         isCreator: p.isCreator,
         isSpectator: p.isSpectator,
+        location: p.location,
       }));
 
     setRoom((prev) => {
@@ -79,6 +139,7 @@ export default function Room() {
             vote: p.vote,
             isCreator: p.isCreator,
             isSpectator: p.isSpectator,
+            location: p.location,
           }));
 
         // Try to recover room name from presence or local storage if possible
@@ -113,6 +174,7 @@ export default function Room() {
           isCreator: !!isFirst,
           vote: null,
           roomName,
+          location: localStorage.getItem("poker_user_location"),
         });
       })
       .subscribe(async (status) => {
@@ -134,39 +196,6 @@ export default function Room() {
     };
   }, [roomId]);
 
-  const startCountdown = () => {
-    setCountdown(3);
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev !== null && prev > 1) return prev - 1;
-        clearInterval(interval);
-        return null;
-      });
-    }, 1000);
-  };
-
-  const joinRoom = async (name: string, spectator: boolean, activeChannel?: RealtimeChannel) => {
-    const targetChannel = activeChannel || channel;
-    if (!targetChannel || !roomId) return;
-
-    const state = targetChannel.presenceState();
-    const isFirst = Object.keys(state).length === 0;
-    const roomName = localStorage.getItem(`poker_room_name_${roomId}`) || "Planning Poker";
-
-    await targetChannel.track({
-      name,
-      isSpectator: spectator,
-      isCreator: isFirst,
-      vote: voteRef.current,
-      roomName,
-    });
-
-    setHasJoined(true);
-    userNameRef.current = name;
-    isSpectatorRef.current = spectator;
-    localStorage.setItem("poker_user_name", name);
-    localStorage.setItem("poker_is_spectator", spectator ? "true" : "false");
-  };
 
   const handleJoinSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -183,7 +212,8 @@ export default function Room() {
         name: userName,
         isSpectator,
         vote: vote,
-        roomName: room.name
+        roomName: room.name,
+        location: currentUser?.location
       });
       voteRef.current = vote;
     }
@@ -224,7 +254,8 @@ export default function Room() {
         name: userName,
         isSpectator,
         vote: null,
-        roomName: room?.name
+        roomName: room?.name,
+        location: currentUser?.location
       });
 
       setRoom(prev => prev ? { ...prev, status: "voting" } : null);
@@ -479,7 +510,7 @@ export default function Room() {
                         )}
                       </div>
                       <div className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 truncate max-w-[150px] text-center bg-white/80 dark:bg-slate-800/80 px-2 py-1 rounded-md backdrop-blur-sm">
-                        {user.name}
+                        {user.name} {user.location && <span className="text-indigo-500 font-bold ml-1">[{user.location}]</span>}
                         {user.id === currentUser?.id && ` (${t("you")})`}
                       </div>
                     </div>
@@ -589,7 +620,7 @@ export default function Room() {
                 <div className="flex flex-wrap gap-2">
                   {spectatorUsers.map(user => (
                     <div key={user.id} className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-full text-sm font-medium">
-                      {user.name} {user.id === currentUser?.id && `(${t("you")})`}
+                      {user.name} {user.location && <span className="text-indigo-500 font-bold">[{user.location}]</span>} {user.id === currentUser?.id && `(${t("you")})`}
                     </div>
                   ))}
                 </div>

@@ -1,4 +1,4 @@
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,22 @@ export default function Home() {
   const [isSpectator, setIsSpectator] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchLocation = async () => {
+      if (localStorage.getItem("poker_user_location")) return;
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        const data = await res.json();
+        if (data.country_code === "BR" && data.region_code) {
+          localStorage.setItem("poker_user_location", data.region_code);
+        }
+      } catch (err) {
+        console.error("Failed to fetch location", err);
+      }
+    };
+    fetchLocation();
+  }, []);
 
   const handleCreateRoom = (e: FormEvent) => {
     e.preventDefault();
