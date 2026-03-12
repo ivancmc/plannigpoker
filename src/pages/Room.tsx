@@ -24,6 +24,36 @@ interface RoomData {
 
 const FIBONACCI = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "55", "?", "☕"];
 
+const STATE_COORDS: Record<string, { x: number; y: number }> = {
+  AC: { x: -40, y: 25 },
+  AL: { x: 155, y: 22 },
+  AP: { x: 61, y: -25 },
+  AM: { x: -10, y: -2 },
+  BA: { x: 130, y: 35 },
+  CE: { x: 135, y: 0 },
+  DF: { x: 87, y: 50 },
+  ES: { x: 131, y: 70 },
+  GO: { x: 74, y: 52 },
+  MA: { x: 95, y: 2 },
+  MT: { x: 48, y: 38 },
+  MS: { x: 48, y: 78 },
+  MG: { x: 110, y: 65 },
+  PA: { x: 58, y: 5 },
+  PB: { x: 150, y: 10 },
+  PR: { x: 65, y: 95 },
+  PE: { x: 150, y: 17 },
+  PI: { x: 120, y: 12 },
+  RJ: { x: 120, y: 82 },
+  RN: { x: 150, y: 5 },
+  RS: { x: 50, y: 120 },
+  RO: { x: -5, y: 25 },
+  RR: { x: 5, y: -25 },
+  SC: { x: 75, y: 110 },
+  SP: { x: 83, y: 82 },
+  SE: { x: 148, y: 27 },
+  TO: { x: 80, y: 26 },
+};
+
 export default function Room() {
   const { t } = useTranslation();
   const { roomId } = useParams<{ roomId: string }>();
@@ -87,7 +117,7 @@ export default function Room() {
           const loc = data.region_code;
           setLocation(loc);
           localStorage.setItem("poker_user_location", loc);
-          
+
           if (hasJoined && channel && userNameRef.current) {
             joinRoom(userNameRef.current, isSpectatorRef.current, channel);
           }
@@ -162,7 +192,7 @@ export default function Room() {
       .on("broadcast", { event: "reset" }, async () => {
         voteRef.current = null;
         setRoom((prev) => prev ? { ...prev, status: "voting" } : null);
-        
+
         // Each user must reset their own vote in the presence state
         const state = currentChannel.presenceState();
         const isFirst = Object.keys(state).length === 0 || (state[roomId!]?.[0] as any)?.isCreator;
@@ -425,7 +455,14 @@ export default function Room() {
         <div className="space-y-6">
           <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 min-h-[400px] h-full flex flex-col transition-colors duration-200">
             <div className="flex justify-between items-center mb-8">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">{t("table")}</h2>
+              <div className="flex flex-col">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">{t("table")}</h2>
+                {room.status === "voting" && (
+                  <span className="text-sm text-indigo-500 font-medium animate-pulse hidden sm:block">
+                    {t("voting_in_progress")}
+                  </span>
+                )}
+              </div>
               {isCreator && (
                 <div className="flex gap-3">
                   {room.status === "voting" ? (
@@ -455,63 +492,123 @@ export default function Room() {
             </div>
 
             {/* Poker Table Visualization */}
-            <div className="relative flex items-center justify-center py-12 min-h-[300px]">
-              <div className="absolute inset-0 bg-slate-50 dark:bg-slate-900 rounded-full border-4 border-slate-200 dark:border-slate-700 w-full max-w-md mx-auto aspect-[2/1] sm:aspect-auto sm:h-64 top-1/2 -translate-y-1/2 flex items-center justify-center transition-colors duration-200">
+            <div className="relative flex items-center justify-center py-12 min-h-[350px]">
+              <div className="absolute bg-slate-50 dark:bg-slate-900 rounded-full border-4 border-slate-200 dark:border-slate-700 w-[65%] h-[80%] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center transition-colors duration-200">
                 {room.status === "revealing" && countdown !== null && (
                   <div className="text-center animate-pulse">
                     <div className="text-6xl font-bold text-indigo-600 dark:text-indigo-400">{countdown}</div>
                   </div>
                 )}
                 {(room.status === "voting" || room.status === "revealed") && (
-                  <div className="text-slate-400 dark:text-slate-500 font-medium text-center px-4">
-                    {room.status === "voting" ? t("voting_in_progress") : (
-                      <div className="flex flex-col items-center">
-                        <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{average > 0 ? average.toFixed(1).replace(/\.0$/, '') : "-"}</span>
-                        <span className="text-[10px] uppercase tracking-widest">{t("average")}</span>
-                      </div>
+                  <div className="relative w-full h-full flex items-center justify-center overflow-hidden rounded-full">
+                    {room.status === "voting" && (
+                      <span className="text-xs sm:hidden text-slate-400 dark:text-slate-500 font-medium animate-pulse text-center px-4">
+                        {t("voting_in_progress")}
+                      </span>
                     )}
+                    <img
+                      src="/brazil-map.png"
+                      alt="Brazil Map"
+                      className="absolute inset-0 w-full h-full object-cover opacity-20 dark:opacity-60 invert dark:invert-0 mix-blend-multiply dark:mix-blend-screen hidden sm:block"
+                    />
                   </div>
                 )}
               </div>
+
+              {/* SVG Layer for connection lines */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 hidden sm:block" viewBox="0 0 100 100">
+                {votingUsers.map((user, index) => {
+                  if (!user.location || !STATE_COORDS[user.location]) return null;
+
+                  const totalUsers = votingUsers.length;
+                  const angle = (index / totalUsers) * 2 * Math.PI - Math.PI / 2;
+                  const radiusX = 45;
+                  const radiusY = 40;
+
+                  // Card center position in 100x100 SVG space
+                  const cx = 50 + Math.cos(angle) * radiusX;
+                  const cy = 50 + Math.sin(angle) * radiusY;
+
+                  // State position on the map
+                  // The map image is roughly 45% widexheight in the center
+                  const mapScale = 0.45;
+                  const mapOffset = (1 - mapScale) / 2 * 100;
+                  const sx = mapOffset + (STATE_COORDS[user.location].x / 100) * mapScale * 100;
+                  const sy = mapOffset + (STATE_COORDS[user.location].y / 100) * mapScale * 100;
+
+                  return (
+                    <g key={`line-${user.id}`} className="transition-all duration-500">
+                      <line
+                        x1={cx} y1={cy} x2={sx} y2={sy}
+                        stroke="rgba(52, 211, 153, 0.9)"
+                        strokeWidth="0.7"
+                        strokeDasharray="2,2"
+                        className="animate-[dash_20s_linear_infinite]"
+                      />
+                      <circle cx={cx} cy={cy} r="1.2" fill="#34d399" />
+                      <circle cx={sx} cy={sy} r="1.2" fill="#34d399" className="animate-pulse shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
+                    </g>
+                  );
+                })}
+              </svg>
 
               {/* Users around table */}
               <div className="relative w-full h-full min-h-[300px]">
                 {votingUsers.map((user, index) => {
                   const totalUsers = votingUsers.length;
                   const angle = totalUsers > 0 ? (index / totalUsers) * 2 * Math.PI - Math.PI / 2 : 0;
-                  const radiusX = 45;
-                  const radiusY = 40;
+                  const radiusX = 47;
+                  const radiusY = 47;
 
                   const left = `calc(50% + ${Math.cos(angle) * radiusX}%)`;
                   const top = `calc(50% + ${Math.sin(angle) * radiusY}%)`;
 
+                  // Determine name position based on angle to keep it "outside" the table
+                  const normalizedAngle = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+                  let namePositionClass = "top-full left-1/2 -translate-x-1/2 mt-2"; // default bottom
+
+                  if (normalizedAngle >= Math.PI * 0.25 && normalizedAngle < Math.PI * 0.75) {
+                    namePositionClass = "top-full left-1/2 -translate-x-1/2 mt-2"; // Bottom
+                  } else if (normalizedAngle >= Math.PI * 0.75 && normalizedAngle < Math.PI * 1.25) {
+                    namePositionClass = "right-full top-1/2 -translate-y-1/2 mr-3 text-right"; // Left
+                  } else if (normalizedAngle >= Math.PI * 1.25 && normalizedAngle < Math.PI * 1.75) {
+                    namePositionClass = "bottom-full left-1/2 -translate-x-1/2 mb-2"; // Top
+                  } else {
+                    namePositionClass = "left-full top-1/2 -translate-y-1/2 ml-3 text-left"; // Right
+                  }
+
                   return (
                     <div
                       key={user.id}
-                      className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2"
+                      className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
                       style={{ left, top }}
                     >
-                      <div className={clsx(
-                        "w-12 h-16 sm:w-16 sm:h-24 rounded-lg border-2 flex items-center justify-center shadow-sm transition-all duration-500",
-                        room.status === "revealing" && user.vote
-                          ? "bg-indigo-600 border-indigo-700 text-white animate-pulse"
-                          : user.vote
-                            ? (room.status === "revealed" ? "bg-white dark:bg-slate-800 border-indigo-600 text-indigo-600" : "bg-indigo-600 border-indigo-700 text-white")
-                            : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 border-dashed text-slate-400 dark:text-slate-500"
-                      )}>
-                        {room.status === "revealing" && user.vote ? (
-                          <span className="text-2xl">✓</span>
-                        ) : room.status === "revealed" ? (
-                          <span className="text-2xl font-bold">{user.vote || "?"}</span>
-                        ) : user.vote ? (
-                          <span className="text-2xl">✓</span>
-                        ) : (
-                          <span className="text-sm">...</span>
-                        )}
-                      </div>
-                      <div className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 truncate max-w-[150px] text-center bg-white/80 dark:bg-slate-800/80 px-2 py-1 rounded-md backdrop-blur-sm">
-                        {user.name} {user.location && <span className="text-indigo-500 font-bold ml-1">[{user.location}]</span>}
-                        {user.id === currentUser?.id && ` (${t("you")})`}
+                      <div className="relative">
+                        <div className={clsx(
+                          "w-12 h-16 sm:w-16 sm:h-24 rounded-lg border-2 flex items-center justify-center shadow-sm transition-all duration-500 z-10",
+                          room.status === "revealing" && user.vote
+                            ? "bg-indigo-600 border-indigo-700 text-white animate-pulse"
+                            : user.vote
+                              ? (room.status === "revealed" ? "bg-white dark:bg-slate-800 border-indigo-600 text-indigo-600" : "bg-indigo-600 border-indigo-700 text-white")
+                              : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 border-dashed text-slate-400 dark:text-slate-500"
+                        )}>
+                          {room.status === "revealing" && user.vote ? (
+                            <span className="text-2xl">✓</span>
+                          ) : room.status === "revealed" ? (
+                            <span className="text-2xl font-bold">{user.vote || "?"}</span>
+                          ) : user.vote ? (
+                            <span className="text-2xl">✓</span>
+                          ) : (
+                            <span className="text-sm">...</span>
+                          )}
+                        </div>
+                        <div className={clsx(
+                          "absolute z-20 whitespace-nowrap text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 bg-white/90 dark:bg-slate-800/90 px-2 py-1 rounded-md shadow-sm backdrop-blur-sm transition-all duration-300",
+                          namePositionClass
+                        )}>
+                          {user.name} {user.location && <span className="text-indigo-500 ml-1">[{user.location}]</span>}
+                          {user.id === currentUser?.id && ` (${t("you")})`}
+                        </div>
                       </div>
                     </div>
                   );
@@ -532,7 +629,7 @@ export default function Room() {
                         <div key={voteValue} className="flex flex-col items-center group">
                           {/* Bar */}
                           <div className="w-3 h-32 bg-slate-100 dark:bg-slate-700/50 rounded-full relative overflow-hidden mb-3">
-                            <div 
+                            <div
                               className="absolute bottom-0 left-0 right-0 bg-indigo-500 dark:bg-indigo-400 rounded-full transition-all duration-1000 ease-out"
                               style={{ height: `${heightPercentage}%` }}
                             />
@@ -635,7 +732,7 @@ export default function Room() {
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 transition-colors duration-200">
               <div className="flex flex-col gap-4">
                 <h2 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest text-center">{t("pick_your_card")}</h2>
-                
+
                 <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
                   {FIBONACCI.map((value) => (
                     <button

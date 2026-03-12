@@ -2,3 +2,11 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@keyframes dash {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
