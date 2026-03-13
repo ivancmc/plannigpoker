@@ -101,7 +101,7 @@ export default function Room() {
       .on("broadcast", { event: "reset" }, async () => {
         voteRef.current = null;
         setRoom((prev) => prev ? { ...prev, status: "voting" } : null);
-        
+
         // Each user must reset their own vote in the presence state
         const state = currentChannel.presenceState();
         const isFirst = Object.keys(state).length === 0 || (state[roomId!]?.[0] as any)?.isCreator;
@@ -425,7 +425,7 @@ export default function Room() {
 
             {/* Poker Table Visualization */}
             <div className="relative flex items-center justify-center py-12 min-h-[300px]">
-              <div className="absolute inset-0 bg-slate-50 dark:bg-slate-900 rounded-full border-4 border-slate-200 dark:border-slate-700 w-full max-w-md mx-auto aspect-[2/1] sm:aspect-auto sm:h-64 top-1/2 -translate-y-1/2 flex items-center justify-center transition-colors duration-200">
+              <div className="absolute inset-0 bg-slate-50 dark:bg-slate-900 rounded-full border-4 border-slate-200 dark:border-slate-700 w-full max-w-md md:max-w-2xl lg:max-w-2xl mx-auto aspect-[2/1] sm:aspect-auto sm:h-64 md:h-80 top-1/2 -translate-y-1/2 flex items-center justify-center transition-colors duration-200">
                 {room.status === "revealing" && countdown !== null && (
                   <div className="text-center animate-pulse">
                     <div className="text-6xl font-bold text-indigo-600 dark:text-indigo-400">{countdown}</div>
@@ -448,8 +448,8 @@ export default function Room() {
                 {votingUsers.map((user, index) => {
                   const totalUsers = votingUsers.length;
                   const angle = totalUsers > 0 ? (index / totalUsers) * 2 * Math.PI - Math.PI / 2 : 0;
-                  const radiusX = 45;
-                  const radiusY = 40;
+                  const radiusX = 40;
+                  const radiusY = 50;
 
                   const left = `calc(50% + ${Math.cos(angle) * radiusX}%)`;
                   const top = `calc(50% + ${Math.sin(angle) * radiusY}%)`;
@@ -457,7 +457,20 @@ export default function Room() {
                   return (
                     <div
                       key={user.id}
-                      className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2"
+                      className={clsx(
+                        "absolute transform -translate-x-1/2 -translate-y-1/2 flex gap-2",
+                        // Determine flex direction based on angle to place name outside the table
+                        (() => {
+                          let normAngle = angle;
+                          while (normAngle > Math.PI) normAngle -= 2 * Math.PI;
+                          while (normAngle <= -Math.PI) normAngle += 2 * Math.PI;
+
+                          if (normAngle > -Math.PI * 0.75 && normAngle < -Math.PI * 0.25) return "flex-col-reverse items-center"; // Top
+                          if (normAngle > Math.PI * 0.25 && normAngle < Math.PI * 0.75) return "flex-col items-center"; // Bottom
+                          if (normAngle >= -Math.PI * 0.25 && normAngle <= Math.PI * 0.25) return "flex-row items-center"; // Right
+                          return "flex-row-reverse items-center"; // Left
+                        })()
+                      )}
                       style={{ left, top }}
                     >
                       <div className={clsx(
@@ -501,7 +514,7 @@ export default function Room() {
                         <div key={voteValue} className="flex flex-col items-center group">
                           {/* Bar */}
                           <div className="w-3 h-32 bg-slate-100 dark:bg-slate-700/50 rounded-full relative overflow-hidden mb-3">
-                            <div 
+                            <div
                               className="absolute bottom-0 left-0 right-0 bg-indigo-500 dark:bg-indigo-400 rounded-full transition-all duration-1000 ease-out"
                               style={{ height: `${heightPercentage}%` }}
                             />
@@ -604,7 +617,7 @@ export default function Room() {
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 transition-colors duration-200">
               <div className="flex flex-col gap-4">
                 <h2 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest text-center">{t("pick_your_card")}</h2>
-                
+
                 <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
                   {FIBONACCI.map((value) => (
                     <button
